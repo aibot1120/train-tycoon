@@ -22,7 +22,7 @@ namespace TravelChina.Core
     /// 單個物件（特產/觀光資源）
     /// </summary>
     [Serializable]
-    public class GameObject
+    public class GoodsItem
     {
         public string id;          // "OBJ_001"
         public string nameCN;      // "北京烤鴨"
@@ -55,7 +55,7 @@ namespace TravelChina.Core
         public bool IsSeasonal;   // 是否受季節影響
 
         // 物件車站專用
-        public List<GameObject> Objects = new();
+        public List<GoodsItem> Objects = new();
         public int OwnerId = -1;  // 車站擁有者（主要用於壟斷計算）
         public bool IsMonopolized = false;
         public int MonopolyOwnerId = -1;
@@ -202,12 +202,12 @@ namespace TravelChina.Core
         /// <summary>
         /// 為物件車站生成特色物件
         /// </summary>
-        private List<GameObject> GenerateObjectsForStation(string cityName, string province)
+        private List<GoodsItem> GenerateObjectsForStation(string cityName, string province)
         {
-            var objects = new List<GameObject>();
+            var objects = new List<GoodsItem>();
             int basePrice = UnityEngine.Random.Range(500_000, 2_000_000);
 
-            objects.Add(new GameObject
+            objects.Add(new GoodsItem
             {
                 id = $"OBJ_{cityName}_A",
                 nameCN = $"{cityName}特產",
@@ -218,7 +218,7 @@ namespace TravelChina.Core
                 stationId = cityName
             });
 
-            objects.Add(new GameObject
+            objects.Add(new GoodsItem
             {
                 id = $"OBJ_{cityName}_B",
                 nameCN = $"{cityName}觀光",
