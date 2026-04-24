@@ -35,7 +35,7 @@ namespace TravelChina.Systems
                 currentMonth = month,
                 currentRound = round,
                 playerData = new System.Collections.Generic.List<PlayerSaveData>(),
-                boardData = new BoardSaveData { cells = new System.Collections.Generic.List<CellSaveData>() }
+                boardData = new BoardSaveData { stations = new System.Collections.Generic.List<StationSaveData>() }
             };
 
             // 玩家數據
@@ -44,22 +44,23 @@ namespace TravelChina.Systems
                 var p = pm.GetPlayer(i);
                 saveData.playerData.Add(new PlayerSaveData
                 {
-                    money = p.money,
-                    position = p.position,
-                    ownedCells = new System.Collections.Generic.List<int>(p.ownedCells),
-                    handCards = new System.Collections.Generic.List<string>(p.handCards)
+                    id = p.Id,
+                    money = p.Money,
+                    position = p.Position,
+                    routeIndex = p.RouteIndex
                 });
             }
 
             // 板塊數據
-            for (int i = 0; i < bm.GetCellCount(); i++)
+            for (int i = 0; i < bm.GetStationCount(); i++)
             {
-                var cell = bm.GetCellAt(i);
-                saveData.boardData.cells.Add(new CellSaveData
+                var station = bm.GetStation(i);
+                saveData.boardData.stations.Add(new StationSaveData
                 {
-                    ownerId = cell.ownerId,
-                    level = cell.level,
-                    hasRailway = cell.hasRailway
+                    id = station.Id,
+                    ownerId = station.OwnerId,
+                    isMonopolized = station.IsMonopolized,
+                    monopolyOwnerId = station.MonopolyOwnerId
                 });
             }
 
@@ -131,6 +132,30 @@ namespace TravelChina.Systems
         public int currentRound;
         public System.Collections.Generic.List<PlayerSaveData> playerData;
         public BoardSaveData boardData;
+    }
+
+    [Serializable]
+    public class PlayerSaveData
+    {
+        public int id;
+        public long money;
+        public int position;
+        public int routeIndex;
+    }
+
+    [Serializable]
+    public class BoardSaveData
+    {
+        public System.Collections.Generic.List<StationSaveData> stations;
+    }
+
+    [Serializable]
+    public class StationSaveData
+    {
+        public int id;
+        public int ownerId;
+        public bool isMonopolized;
+        public int monopolyOwnerId;
     }
 
     #endregion
