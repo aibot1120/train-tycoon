@@ -12,13 +12,13 @@ namespace TravelChina.AI
         Idle,
         Rolling,
         Buying,
-        Upgrading,
         UsingCard,
         Finished
     }
 
     /// <summary>
     /// AI 對手控制器
+    /// MVP 版本：適配當前 BoardManager/Station/Player 結構
     /// </summary>
     public class AIGameController : MonoBehaviour
     {
@@ -27,9 +27,8 @@ namespace TravelChina.AI
         private System.Random rng = new System.Random();
 
         // AI 行為權重（可調整）
-        private const int THRESHOLD_BUY_LAND = 3_000_000;   // 低於這個餘額不買
-        private const int THRESHOLD_UPGRADE = 5_000_000;    // 升級門檻
-        private const int MIN_PROFIT_TO_KEEP = 500_000;      // 最低利潤門檻
+        private const long THRESHOLD_BUY = 3_000_000;   // 低於這個餘額不買物件
+        private const long THRESHOLD_USE_CARD = 5_000_000; // 有多少錢時使用卡片
 
         private void Awake()
         {
@@ -52,76 +51,61 @@ namespace TravelChina.AI
             var cs = CardSystem.Instance;
 
             var player = pm.GetPlayer(playerIndex);
-            if (!player.isAI) { onComplete?.Invoke(); yield break; }
 
             // 1. 擲骰子
             yield return new WaitForSeconds(0.5f);
             int dice = DiceSystem.Instance.Roll();
             GameManager.Instance.UI.ShowDiceResult(dice);
 
-            int currentPos = player.position;
-            int newPos = bm.GetNextPosition(currentPos, dice);
-            pm.MovePlayer(playerIndex, newPos);
+            int currentRouteIndex = player.RouteIndex;
+            int newRouteIndex = bm.GetNextPosition(currentRouteIndex, dice);
+            pm.MovePlayer(playerIndex, newRouteIndex);
 
-            GameManager.Instance.UI.ShowAITrainMoving(playerIndex, currentPos, newPos);
+            GameManager.Instance.UI.ShowAITrainMoving(playerIndex, currentRouteIndex, newRouteIndex);
             yield return new WaitForSeconds(1.5f);
 
-            // 2. 到達地點決策
-            var cell = bm.GetCellAt(newPos);
+            // 2. 到達車站處理
+            var station = bm.GetStation(newRouteIndex);
 
-            // 2a. 如果沒人擁有，嘗試購買
-            if (cell.ownerId == -1 && player.money >= cell.basePrice)
+            // 根據車站類型處理
+            switch (station.Type)
             {
-                if (ShouldBuy(player, cell))
-                {
-                    bm.PurchaseLand(cell.id, playerIndex, cell.basePrice);
-                    pm.SpendMoney(playerIndex, cell.basePrice);
-                    pm.AddCellToPlayer(playerIndex, cell.id);
-                    GameManager.Instance.UI.ShowAIPurchase(cell, true);
-                    yield return new WaitForSeconds(0.5f);
-                }
-            }
-            // 2b. 如果是自己已有的，考慮升級
-            else if (cell.ownerId == playerIndex && player.money >= cell.upgradeHSRCost)
-            {
-                if (ShouldUpgrade(player, cell))
-                {
-                    var nextLevel = cell.level + 1;
-                    int cost = cell.level == StationLevel.Land ? cell.stationCost :
-                               cell.level == StationLevel.Station ? cell.upgradeHSRCost : cell.upgradeMaglevCost;
-                    if (player.money >= cost)
+                case StationType.Object:
+                    // 嘗試購買物件
+                    if (station.Objects.Count > 0 && player.Money >= THRESHOLD_BUY)
                     {
-                        bm.UpgradeStation(cell.id, nextLevel);
-                        pm.SpendMoney(playerIndex, cost);
-                        GameManager.Instance.UI.ShowAIPurchase(cell, false);
-                        yield return new WaitForSeconds(0.5f);
+                        var obj = station.Objects[0]; // 買第一個物件
+                        if (player.Money >= obj.Price)
+                        {
+                            // 簡化：AI 30% 機會購買
+                            if (rng.NextDouble() > 0.7)
+                            {
+                                GameManager.Instance.PurchaseObject(playerIndex, 0);
+                                yield return new WaitForSeconds(0.5f);
+                            }
+                        }
                     }
-                }
-            }
-            // 2c. 如果是別人的，支付過路費
-            else if (cell.ownerId >= 0 && cell.ownerId != playerIndex && cell.level > StationLevel.None)
-            {
-                int toll = bm.CalculateToll(cell.id);
-                if (player.money >= toll)
-                {
-                    pm.SpendMoney(playerIndex, toll);
-                    var owner = pm.GetPlayer(cell.ownerId);
-                    pm.AddMoney(cell.ownerId, toll);
-                    GameManager.Instance.UI.ShowAITollPaid(cell, toll);
-                    yield return new WaitForSeconds(0.5f);
-                }
+                    break;
+
+                case StationType.CardDraw:
+                case StationType.CardGood:
+                    // 抽卡片
+                    var card = cs.DrawCard();
+                    if (card != null)
+                    {
+                        cs.ExecuteCard(card, playerIndex);
+                    }
+                    break;
             }
 
-            // 3. 考慮是否使用卡片
-            if (player.handCards.Count > 0 && rng.NextDouble() > 0.6)
+            // 3. 考慮是否使用手牌
+            if (player.HandCards.Count > 0 && player.Money >= THRESHOLD_USE_CARD)
             {
-                // 60% 機會使用手牌（簡化邏輯）
-                var cardId = player.handCards[rng.Next(player.handCards.Count)];
-                var card = FindCardById(cardId);
-                if (card != null)
+                if (rng.NextDouble() > 0.5) // 50% 機會使用手牌
                 {
-                    cs.ExecuteCardEffect(card, playerIndex);
-                    player.handCards.Remove(cardId);
+                    var cardToUse = player.HandCards[0];
+                    cs.ExecuteCard(cardToUse, playerIndex);
+                    // 從手牌移除（CardSystem需要有對應方法）
                     yield return new WaitForSeconds(0.5f);
                 }
             }
@@ -129,30 +113,6 @@ namespace TravelChina.AI
             // 4. 結束回合
             yield return new WaitForSeconds(0.3f);
             onComplete?.Invoke();
-        }
-
-        private bool ShouldBuy(Player player, BoardCell cell)
-        {
-            // 評估是否應該購買
-            // 簡化策略：有足夠錢 + 不是太差的位置
-            if (player.money < cell.basePrice + 2_000_000) return false;
-            if (cell.grade == CityGrade.B && rng.NextDouble() > 0.3) return false; // B級30%機會不買
-            return true;
-        }
-
-        private bool ShouldUpgrade(Player player, BoardCell cell)
-        {
-            // 評估是否應該升級
-            if (cell.level >= StationLevel.Maglev) return false;
-            if (cell.grade == CityGrade.B && rng.NextDouble() > 0.5) return false;
-            return player.money > THRESHOLD_UPGRADE;
-        }
-
-        private CardData FindCardById(string cardId)
-        {
-            foreach (var card in CardSystem.Instance.AllCards)
-                if (card.id == cardId) return card;
-            return null;
         }
 
         /// <summary>
@@ -164,34 +124,24 @@ namespace TravelChina.AI
             var bm = BoardManager.Instance;
             var player = pm.GetPlayer(playerIndex);
 
-            // 簡單策略建議
-            var unowned = new List<BoardCell>();
-            foreach (var cell in bm.Cells)
-                if (cell.ownerId == -1) unowned.Add(cell);
-
-            if (unowned.Count == 0) return "無可購置土地，建議升級現有車站。";
-
-            // 找到最值得買的
-            BoardCell best = null;
-            int bestScore = -1;
-            foreach (var cell in unowned)
+            // 找到還沒有人擁有物件的車站
+            var unowned = new List<Station>();
+            foreach (var station in bm.Stations)
             {
-                int score = cell.grade switch
-                {
-                    CityGrade.S => 100,
-                    CityGrade.A => 60,
-                    CityGrade.B => 20,
-                    _ => 0
-                };
-                if (cell.isHeritage) score += 20;
-                if (score > bestScore) { bestScore = score; best = cell; }
+                if (station.Type == StationType.Object && station.OwnerId == -1)
+                    unowned.Add(station);
             }
 
-            if (best != null && player.money >= best.basePrice)
-                return $"建議購買【{best.cityName}】，¥{best.basePrice:N0}";
-            else if (best != null)
-                return $"【{best.cityName}】需要¥{best.basePrice:N0}，當前餘額不足";
-            return "暫無建議";
+            if (unowned.Count == 0) return "暫無建議";
+
+            // 找到最值得買的（隨機選擇一個）
+            if (unowned.Count > 0 && player.Money >= THRESHOLD_BUY)
+            {
+                var pick = unowned[rng.Next(unowned.Count)];
+                return $"建議購買【{pick.NameCN}】的{pick.Objects.Count}個物件";
+            }
+
+            return "資金不足，建議等待";
         }
     }
 }
