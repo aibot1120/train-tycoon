@@ -1,0 +1,33 @@
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+
+# Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+
+# JetBrains Rider
+.idea/
+
+# Backup files
+*.orig
+*~
+
+# Unity specific
+*.pidb
+*.app
+*.ipa
+*.dylib
+*.mdb
